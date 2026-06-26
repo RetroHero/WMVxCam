@@ -404,6 +404,12 @@
      <item>
       <widget class="RenderControl" name="renderControl" native="true"/>
      </item>
+     <item>
+      <widget class="CameraControl" name="cameraControl" native="true"/>
+     </item>
+     <item>
+      <widget class="SecondaryCameraControl" name="secondaryCameraControl" native="true"/>
+     </item>
     </layout>
    </widget>
   </widget>
@@ -654,6 +660,18 @@
    <class>RenderControl</class>
    <extends>QWidget</extends>
    <header>rendercontrol.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>CameraControl</class>
+   <extends>QWidget</extends>
+   <header>cameracontrol.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
+   <class>SecondaryCameraControl</class>
+   <extends>QWidget</extends>
+   <header>secondarycameracontrol.h</header>
    <container>1</container>
   </customwidget>
  </customwidgets>

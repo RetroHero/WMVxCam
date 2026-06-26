@@ -6,7 +6,6 @@
     "glew",
     "glm",
     "opengl",
-    "qtbase",
     "stormlib",
     "wdbreader",
     "fast-cpp-csv-parser"

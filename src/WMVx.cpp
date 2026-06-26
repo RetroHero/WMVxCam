@@ -96,6 +96,8 @@ WMVx::WMVx(QWidget* parent)
     ui.sceneControl->onSceneLoaded(scene);
     ui.modelControl->onSceneLoaded(scene);
     ui.renderControl->onSceneLoaded(scene);
+    ui.cameraControl->setRenderWidget(ui.renderWidget);
+    ui.secondaryCameraControl->setRenderWidget(ui.renderWidget);
     ui.characterControl->onSceneLoaded(scene);
     ui.animationControl->onSceneLoaded(scene);
 

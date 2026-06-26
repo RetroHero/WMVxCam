@@ -1,0 +1,13 @@
+$fbx = "C:/Program Files/Autodesk/FBX/FBX SDK/2020.3.4"
+$qt  = "C:/Qt/6.11.1/msvc2022_64"
+
+cmake -S "C:\Users\forma\WMVxCam" -B "C:\Users\forma\WMVxCam\build" `
+  -G "Visual Studio 17 2022" -A x64 `
+  -DCMAKE_TOOLCHAIN_FILE="C:/vcpkg/scripts/buildsystems/vcpkg.cmake" `
+  -DVCPKG_TARGET_TRIPLET="x64-windows-mixed" `
+  -DVCPKG_OVERLAY_TRIPLETS="C:/Users/forma/WMVxCam/vcpkg/triplets" `
+  -DVCPKG_OVERLAY_PORTS="C:/Users/forma/WMVxCam/vcpkg/ports" `
+  -DFBX_SDK_ROOT_DIR="$fbx" `
+  -DCMAKE_PREFIX_PATH="$qt"
+
+cmake --build "C:\Users\forma\WMVxCam\build" --config Release

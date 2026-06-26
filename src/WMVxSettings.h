@@ -15,6 +15,8 @@ WMVX_CONFIG_KEY(app, support_auto_update)
 WMVX_CONFIG_KEY(client, game_folder)
 
 WMVX_CONFIG_KEY(exporter, last_image_directory)
+WMVX_CONFIG_KEY(exporter, last_image_path)
+WMVX_CONFIG_KEY(exporter, last_image_format)
 WMVX_CONFIG_KEY(exporter, last_3d_directory)
 WMVX_CONFIG_KEY(exporter, last_scene_directory)
 

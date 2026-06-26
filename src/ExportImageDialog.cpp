@@ -10,6 +10,41 @@ const QMap<QString,QString> ExportImageDialog::fileFormats = {
 	{"PNG", "PNG (*.png)"}
 };
 
+namespace {
+
+QString formatFromPath(const QString& path)
+{
+	const QString suffix = QFileInfo(path).suffix().toUpper();
+	if (suffix == "JPEG") {
+		return "JPG";
+	}
+	if (ExportImageDialog::fileFormats.contains(suffix)) {
+		return suffix;
+	}
+	return {};
+}
+
+QString pathWithFormat(const QString& path, const QString& format)
+{
+	if (path.isEmpty()) {
+		return path;
+	}
+
+	QFileInfo file_info(path);
+	const QString suffix = format.toLower();
+	if (file_info.completeSuffix().compare(suffix, Qt::CaseInsensitive) == 0) {
+		return path;
+	}
+
+	if (file_info.completeSuffix().isEmpty()) {
+		return path + "." + suffix;
+	}
+
+	return file_info.path() + QDir::separator() + file_info.completeBaseName() + "." + suffix;
+}
+
+}
+
 ExportImageDialog::ExportImageDialog(RenderWidget* widget, QWidget *parent)
 	: QDialog(parent)
 {
@@ -19,14 +54,30 @@ ExportImageDialog::ExportImageDialog(RenderWidget* widget, QWidget *parent)
 	assert(renderWidget != nullptr);
 
 	ui.comboBoxFormat->addItems(fileFormats.keys());
-	ui.lineEditOutput->setText(Settings::get(config::exporter::last_image_directory) + "/image_export.bmp");
+
+	const QString savedPath = Settings::get(config::exporter::last_image_path);
+	const QString savedFormat = Settings::get(config::exporter::last_image_format);
+	QString outputPath = savedPath;
+
+	if (outputPath.isEmpty()) {
+		const QString directory = Settings::get(config::exporter::last_image_directory);
+		const QString defaultFormat = fileFormats.contains(savedFormat) ? savedFormat : "PNG";
+		outputPath = directory.isEmpty()
+			? QString("image_export.%1").arg(defaultFormat.toLower())
+			: directory + QDir::separator() + QString("image_export.%1").arg(defaultFormat.toLower());
+	}
+
+	ui.lineEditOutput->setText(outputPath);
+
+	QString format = fileFormats.contains(savedFormat) ? savedFormat : formatFromPath(outputPath);
+	if (format.isEmpty()) {
+		format = "PNG";
+	}
+	ui.comboBoxFormat->setCurrentText(format);
+	ui.lineEditOutput->setText(pathWithFormat(ui.lineEditOutput->text(), format));
 
 	connect(ui.comboBoxFormat, &QComboBox::currentTextChanged, [&](QString text) {
-		auto outFile = ui.lineEditOutput->text();
-		QFileInfo file_info(outFile);
-		auto suffix = file_info.completeSuffix();
-		outFile = outFile.replace("."+suffix, "." + text.toLower());
-		ui.lineEditOutput->setText(outFile);
+		ui.lineEditOutput->setText(pathWithFormat(ui.lineEditOutput->text(), text));
 	});
 
 	connect(ui.pushButtonBrowse, &QPushButton::pressed, [&]() {
@@ -38,6 +89,11 @@ ExportImageDialog::ExportImageDialog(RenderWidget* widget, QWidget *parent)
 		}
 
 		ui.lineEditOutput->setText(outFile);
+
+		const QString detectedFormat = formatFromPath(outFile);
+		if (!detectedFormat.isEmpty()) {
+			ui.comboBoxFormat->setCurrentText(detectedFormat);
+		}
 	});
 
 	connect(ui.pushButtonCancel, &QPushButton::pressed, [&]() {
@@ -71,6 +127,8 @@ ExportImageDialog::ExportImageDialog(RenderWidget* widget, QWidget *parent)
 
 		QFileInfo file_info(outFile);
 		Settings::instance()->set(config::exporter::last_image_directory, file_info.dir().absolutePath());
+		Settings::instance()->set(config::exporter::last_image_path, file_info.absoluteFilePath());
+		Settings::instance()->set(config::exporter::last_image_format, ui.comboBoxFormat->currentText());
 		Settings::instance()->save();
 
 		accept();

@@ -18,6 +18,8 @@ last_3d_directory=
 [exporter]
 last_3d_directory=
 last_image_directory=
+last_image_path=
+last_image_format=PNG
 last_scene_directory=
 
 [rendering]

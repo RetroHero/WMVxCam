@@ -4,17 +4,47 @@
 #include "WMVxVideoCapabilities.h"
 #include "BasicCamera.h"
 #include "ArcBallCamera.h"
+#include "ModelOrbitCamera.h"
 #include "WMVxSettings.h"
 #include "core/utility/Logger.h"
+#define GLM_ENABLE_EXPERIMENTAL
+#include <glm/gtc/matrix_transform.hpp>
+
+namespace {
+
+glm::vec3 transformModelPoint(const core::Model* model, const core::Vector3& local)
+{
+	const auto& opt = model->modelOptions;
+	glm::mat4 transform(1.f);
+	transform = glm::translate(transform, glm::vec3(opt.position.x, opt.position.y, -opt.position.z));
+	transform = glm::rotate(transform, glm::radians(opt.rotation.x), glm::vec3(1.f, 0.f, 0.f));
+	transform = glm::rotate(transform, glm::radians(opt.rotation.y), glm::vec3(0.f, 1.f, 0.f));
+	transform = glm::rotate(transform, glm::radians(opt.rotation.z), glm::vec3(0.f, 0.f, 1.f));
+	transform = glm::scale(transform, glm::vec3(opt.scale.x, opt.scale.y, opt.scale.z));
+	const glm::vec4 world = transform * glm::vec4(local.x, local.y, local.z, 1.f);
+	return glm::vec3(world);
+}
+
+float worldBoundsRadius(const core::Model* model, float localRadius)
+{
+	const auto& scale = model->modelOptions.scale;
+	return localRadius * std::max({ scale.x, scale.y, scale.z });
+}
+
+}
 
 RenderWidget::RenderWidget(QWidget* parent)
 	: QOpenGLWidget(parent), 
 	QOpenGLExtraFunctions(),
-	WidgetUsesScene()
+	WidgetUsesScene(),
+	m_followModelFocus(true)
 {
 
 	const auto camera_type = Settings::get(config::rendering::camera_type);
-	if (camera_type == ArcBallCamera::identifier) {
+	if (camera_type == ModelOrbitCamera::identifier) {
+		camera = std::make_unique<ModelOrbitCamera>();
+	}
+	else if (camera_type == ArcBallCamera::identifier) {
 		camera = std::make_unique<ArcBallCamera>();
 	}
 	else if(camera_type == BasicCamera::identifier) {
@@ -45,9 +75,109 @@ RenderWidget::RenderWidget(QWidget* parent)
 RenderWidget::~RenderWidget()
 {}
 
+void RenderWidget::onSceneLoaded(core::Scene* new_scene)
+{
+	WidgetUsesScene::onSceneLoaded(new_scene);
+	connect(scene, &core::Scene::modelSelectionChanged, this, [this](const core::Scene::Selection&) {
+		if (auto* orbitCamera = dynamic_cast<ModelOrbitCamera*>(camera.get())) {
+			orbitCamera->resetView();
+		}
+	});
+}
+
 void RenderWidget::resetCamera()
 {
 	camera->reset();
+	if (auto* orbitCamera = dynamic_cast<ModelOrbitCamera*>(camera.get())) {
+		orbitCamera->resetView();
+	}
+	notifyCameraChanged();
+}
+
+ModelOrbitCamera* RenderWidget::modelOrbitCamera()
+{
+	return dynamic_cast<ModelOrbitCamera*>(camera.get());
+}
+
+bool RenderWidget::followsModelFocus() const
+{
+	return m_followModelFocus;
+}
+
+void RenderWidget::setFollowsModelFocus(bool follow)
+{
+	m_followModelFocus = follow;
+}
+
+void RenderWidget::notifyCameraChanged()
+{
+	update();
+	emit cameraChanged();
+}
+
+core::Model* RenderWidget::getFocusModel() const
+{
+	if (scene == nullptr) {
+		return nullptr;
+	}
+
+	if (scene->selected().root != nullptr) {
+		return scene->selected().root;
+	}
+
+	if (!scene->models.empty()) {
+		return scene->models.front().get();
+	}
+
+	return nullptr;
+}
+
+void RenderWidget::updateCameraFocus()
+{
+	auto* orbitCamera = dynamic_cast<ModelOrbitCamera*>(camera.get());
+	if (orbitCamera == nullptr) {
+		return;
+	}
+
+	core::Model* focusModel = getFocusModel();
+	if (focusModel == nullptr) {
+		return;
+	}
+
+	const auto& bounds = focusModel->model->getHeader().boundingBox;
+	const core::Vector3 localCenter = (bounds.min + bounds.max) * 0.5f;
+	const glm::vec3 worldCenter = transformModelPoint(focusModel, localCenter);
+	const float radius = worldBoundsRadius(focusModel, focusModel->model->getHeader().boundingSphereRadius);
+
+	orbitCamera->updateFocus(worldCenter, radius, m_followModelFocus);
+}
+
+void RenderWidget::setupProjection(float aspect)
+{
+	if (aspect <= 0.f) {
+		aspect = 1.f;
+	}
+
+	const float halfHeight = projectionHalfHeight();
+	const float halfWidth = halfHeight * aspect;
+
+	glMatrixMode(GL_PROJECTION);
+	glLoadIdentity();
+	glOrtho(-halfWidth, halfWidth, -halfHeight, halfHeight, 0.1f, 128.0f * 5.f);
+	glMatrixMode(GL_MODELVIEW);
+	glLoadIdentity();
+}
+
+float RenderWidget::projectionHalfHeight() const
+{
+	// Match the visible scale of the previous 45-degree perspective frustum.
+	constexpr float perspectiveFovScale = 0.414213562f; // tan(22.5 degrees)
+
+	if (const auto* orbitCamera = dynamic_cast<const ModelOrbitCamera*>(camera.get())) {
+		return std::max(orbitCamera->distance() * perspectiveFovScale, 0.1f);
+	}
+
+	return std::max(2.f * perspectiveFovScale, 0.1f);
 }
 
 void RenderWidget::initializeGL()
@@ -92,19 +222,48 @@ void RenderWidget::initializeGL()
 void RenderWidget::paintGL()
 {
 	glClearColor(background.red, background.green, background.blue, background.alpha);
-
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LEQUAL);
 
-	camera->setup();
-	if (scene != nullptr) {
+	updateCameraFocus();
 
-		if (scene->showGrid) {
-			renderGrid();
-		}
+	const int widgetHeight = std::max(height(), 1);
+	auto* orbitCamera = dynamic_cast<ModelOrbitCamera*>(camera.get());
 
-		for (const auto &model : scene->models) {
+	if (orbitCamera != nullptr) {
+		const int primaryWidth = std::max(width() / 2, 1);
+		const int secondaryWidth = std::max(width() - primaryWidth, 1);
+
+		glViewport(0, 0, primaryWidth, widgetHeight);
+		setupProjection(static_cast<float>(primaryWidth) / static_cast<float>(widgetHeight));
+		orbitCamera->setup();
+		renderScene();
+
+		glViewport(primaryWidth, 0, secondaryWidth, widgetHeight);
+		setupProjection(static_cast<float>(secondaryWidth) / static_cast<float>(widgetHeight));
+		orbitCamera->setupSecondary();
+		renderScene();
+	}
+	else {
+		glViewport(0, 0, width(), widgetHeight);
+		setupProjection(static_cast<float>(width()) / static_cast<float>(widgetHeight));
+		camera->setup();
+		renderScene();
+	}
+}
+
+void RenderWidget::renderScene()
+{
+	if (scene == nullptr) {
+		return;
+	}
+
+	if (scene->showGrid) {
+		renderGrid();
+	}
+
+	for (const auto &model : scene->models) {
 			const core::AnimationTickArgs& tick = model->animator.getLastTick();
 			glPushMatrix();
 
@@ -305,25 +464,14 @@ void RenderWidget::paintGL()
 			assert(err == GL_NO_ERROR);
 
 			glPopMatrix();
-		}
 	}
 }
 
 void RenderWidget::resizeGL(int width, int height)
 {
-	if (height == 0)										// Prevent A Divide By Zero By
-		height = 1;										// Making Height Equal One
-
-	glViewport(0, 0, width, height);						// Reset The Current Viewport
-
-	glMatrixMode(GL_PROJECTION);						// Select The Projection Matrix
-	glLoadIdentity();									// Reset The Projection Matrix
-
-	// Calculate The Aspect Ratio Of The Window
-	gluPerspective(45.0f, (float)width / (float)height, 0.1f, 128.0f * 5);
-
-	glMatrixMode(GL_MODELVIEW);							// Select The Modelview Matrix
-	glLoadIdentity();									// Reset The Modelview Matrix
+	Q_UNUSED(width);
+	Q_UNUSED(height);
+	emit resized();
 }
 
 void RenderWidget::keyPressEvent(QKeyEvent* event)
@@ -344,6 +492,7 @@ void RenderWidget::keyPressEvent(QKeyEvent* event)
 			camera->key(1.f, 0.f, alt, inputScaleFactor());
 			break;
 		}
+		notifyCameraChanged();
 	}
 
 	QOpenGLWidget::keyPressEvent(event);
@@ -360,6 +509,7 @@ void RenderWidget::wheelEvent(QWheelEvent* event)
 	auto value = delta / 120.f;
 
 	camera->scroll(0.f - value, inputScaleFactor());
+	notifyCameraChanged();
 }
 
 void RenderWidget::mouseMoveEvent(QMouseEvent* event)
@@ -370,6 +520,7 @@ void RenderWidget::mouseMoveEvent(QMouseEvent* event)
 			lastMousePosition = event->position();
 
 			camera->leftMouse(diff.x(), diff.y(), inputScaleFactor());
+			notifyCameraChanged();
 		}
 	}
 	
@@ -379,6 +530,7 @@ void RenderWidget::mouseMoveEvent(QMouseEvent* event)
 			lastMousePosition = event->position();
 
 			camera->rightMouse(diff.x(), diff.y(), inputScaleFactor());
+			notifyCameraChanged();
 		}
 	}
 }

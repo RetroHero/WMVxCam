@@ -9,6 +9,8 @@
 #include "WidgetUsesScene.h"
 #include <memory>
 
+class ModelOrbitCamera;
+
 class RenderWidget : public QOpenGLWidget, protected QOpenGLExtraFunctions, public WidgetUsesScene
 {
 	Q_OBJECT
@@ -19,9 +21,20 @@ public:
 	RenderWidget(QWidget *parent = nullptr);
 	~RenderWidget();
 
+	void onSceneLoaded(core::Scene* new_scene) override;
+
+	ModelOrbitCamera* modelOrbitCamera();
+	bool followsModelFocus() const;
+	void setFollowsModelFocus(bool follow);
+	void notifyCameraChanged();
+
 public slots:
 	void setBackground(core::ColorRGBA<float> color);
 	void resetCamera();
+
+signals:
+	void resized();
+	void cameraChanged();
 
 protected:
 	void initializeGL() override;
@@ -42,6 +55,13 @@ private:
 
 	std::optional<QPointF> lastMousePosition;
 	std::unique_ptr<Camera> camera;
+	bool m_followModelFocus;
+
+	void setupProjection(float aspect);
+	float projectionHalfHeight() const;
+	void updateCameraFocus();
+	void renderScene();
+	core::Model* getFocusModel() const;
 
 	void renderGrid();
 	void renderBounds(const core::Model* model);

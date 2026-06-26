@@ -5,6 +5,7 @@
 #include "WMVxVideoCapabilities.h"
 #include "ArcBallCamera.h"
 #include "BasicCamera.h"
+#include "ModelOrbitCamera.h"
 
 SettingsDialog::SettingsDialog(QWidget* parent)
 	: QDialog(parent)
@@ -71,6 +72,7 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 	//TODO connect saving active item
 
 	const auto cam_type = Settings::get(config::rendering::camera_type);
+	ui.radioButtonModelOrbit->setChecked(cam_type == ModelOrbitCamera::identifier);
 	ui.radioButtonArcball->setChecked(cam_type == ArcBallCamera::identifier);
 	ui.radioButtonBasic->setChecked(cam_type == BasicCamera::identifier);
 	ui.checkBoxHideCursor->setChecked(Settings::get<bool>(config::rendering::camera_hide_mouse));
@@ -84,7 +86,10 @@ SettingsDialog::SettingsDialog(QWidget* parent)
 		Settings::instance()->set(config::client::game_folder, ui.lineEditGameFolder->text());
 		Settings::instance()->set(config::app::support_auto_update, ui.checkBoxUpdateSupport->isChecked());
 
-		if (ui.radioButtonArcball->isChecked()) {
+		if (ui.radioButtonModelOrbit->isChecked()) {
+			Settings::instance()->set(config::rendering::camera_type, ModelOrbitCamera::identifier);
+		}
+		else if (ui.radioButtonArcball->isChecked()) {
 			Settings::instance()->set(config::rendering::camera_type, ArcBallCamera::identifier);
 		}
 		else if (ui.radioButtonBasic->isChecked()) {

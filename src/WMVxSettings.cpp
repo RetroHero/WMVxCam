@@ -29,11 +29,13 @@ void WMVxSettings::load()
 	load_key(config::client::game_folder, "");
 
 	load_key(config::exporter::last_image_directory, "");
+	load_key(config::exporter::last_image_path, "");
+	load_key(config::exporter::last_image_format, "PNG");
 	load_key(config::exporter::last_3d_directory, "");
 	load_key(config::exporter::last_scene_directory, "");
 
 	load_key(config::rendering::target_fps, int32_t(30));
-	load_key(config::rendering::camera_type, "basic");
+	load_key(config::rendering::camera_type, "model_orbit");
 	load_key(config::rendering::camera_hide_mouse, false);
 
 	loaded = true;
